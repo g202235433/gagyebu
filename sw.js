@@ -1,6 +1,6 @@
-const CACHE = 'gagyebu-v1';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
-const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
+const CACHE = 'gagyebu-v2';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './firebase-config.js', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
+const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
@@ -16,7 +16,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (FONT_HOSTS.includes(url.hostname)) {
-    // 글꼴: 캐시에 있으면 바로 쓰고 뒤에서 갱신
+    // 글꼴·Firebase 모듈: 캐시에 있으면 바로 쓰고 뒤에서 갱신
     e.respondWith(caches.open(CACHE).then(async (c) => {
       const hit = await c.match(req);
       const net = fetch(req).then((r) => { c.put(req, r.clone()); return r; }).catch(() => hit);
