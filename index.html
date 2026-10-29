@@ -287,6 +287,17 @@ body.authing .tabbar, body.authing .fab { display: none; }
 .me .mail { font-weight: 600; font-size: 16px; overflow-wrap: anywhere; }
 .me .via { font-size: 13px; color: var(--muted); }
 .btn.wide { width: 100%; padding: 12px 14px; }
+
+/* 카테고리 지출 팝업 */
+.row.tap { cursor: pointer; border-radius: 12px; margin: -7px -9px; padding: 7px 9px; }
+.row.tap:hover { background: var(--surface-2); }
+.row.tap .chev { color: var(--muted); margin-left: 4px; font-size: 15px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.sheet-head h3 { margin: 0; overflow-wrap: anywhere; }
+.catfoot { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; font-size: 13px; color: var(--muted); }
+.item.static { cursor: default; }
+.item.static:hover { background: transparent; }
+#catScrim .day:first-of-type { padding-top: 18px; }
 </style>
 </head>
 <body>
@@ -386,6 +397,13 @@ body.authing .tabbar, body.authing .fab { display: none; }
     <button type="button" class="btn" id="aGoogle">Google로 계속하기</button>
     <div class="authlinks"><button type="button" class="link" id="aToggle">계정이 없나요? 회원가입</button><button type="button" class="link" id="aReset">비밀번호 찾기</button></div>
     <div id="aMsg" class="amsg" role="alert"></div>
+  </div>
+</div>
+
+<div class="scrim" id="catScrim" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="catTitle">
+    <div class="sheet-head"><h3 id="catTitle"></h3><button type="button" class="x" id="catClose" aria-label="닫기">×</button></div>
+    <div id="catBody"></div>
   </div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -631,13 +649,14 @@ var G = window.GB, S = G.S, $ = G.$, esc = G.esc, won = G.won;
 
 var RING_COLOR = { ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)', over: 'var(--over)', none: 'var(--muted)' };
 
-function progressRow(name, spent, goal, thin) {
+function progressRow(name, spent, goal, thin, catId) {
   var st = G.status(spent, goal);
   var w = goal > 0 ? Math.min(100, st.ratio * 100) : 0;
   var pTxt = goal > 0 ? st.pct + '%' : '목표 없음';
   var badge = st.cls === 'over' ? '<span class="badge">초과</span>' : '';
-  return '<div class="row">' +
-    '<div class="head"><span class="name">' + esc(name) + badge + '</span><span class="p num">' + pTxt + '</span></div>' +
+  var open = catId ? '<div class="row tap" data-cat="' + esc(catId) + '" role="button" tabindex="0" aria-label="' + esc(name) + ' 지출 내역 보기">' : '<div class="row">';
+  return open +
+    '<div class="head"><span class="name">' + esc(name) + badge + '</span><span class="p num">' + pTxt + (catId ? '<span class="chev" aria-hidden="true">›</span>' : '') + '</span></div>' +
     '<div class="bar"' + (thin ? ' style="height:8px"' : '') + '><i class="' + st.cls + '" style="width:' + w.toFixed(1) + '%"></i></div>' +
     '<div class="foot"><span class="num">' + G.numFmt(spent) + '원</span><span class="num">' + (goal > 0 ? '목표 ' + G.numFmt(goal) + '원' : '목표를 설정해 보세요') + '</span></div>' +
     '</div>';
@@ -695,8 +714,8 @@ function renderHome() {
     '<div class="legend"><span><i style="background:var(--ok)"></i>70% 미만</span><span><i style="background:var(--warn)"></i>70~90%</span><span><i style="background:var(--danger)"></i>90~100%</span><span><i style="background:var(--over);box-shadow:inset 0 0 0 1.5px var(--over-edge)"></i>초과</span></div>' +
     '</section>';
 
-  html += '<section class="card"><h2>카테고리별</h2><div class="rows">' +
-    (S.cats.length ? S.cats.map(function (c) { return progressRow(c.name, sp.cats[c.id] || 0, g.cats[c.id] || 0); }).join('') : '<div class="muted small">목표 탭에서 카테고리를 추가해 보세요.</div>') +
+  html += '<section class="card"><h2>카테고리별</h2><div class="hint" style="margin:-4px 0 14px">카테고리를 누르면 그 지출 내역만 볼 수 있어요</div><div class="rows">' +
+    (S.cats.length ? S.cats.map(function (c) { return progressRow(c.name, sp.cats[c.id] || 0, g.cats[c.id] || 0, false, c.id); }).join('') : '<div class="muted small">목표 탭에서 카테고리를 추가해 보세요.</div>') +
     '</div></section>';
 
   html += '<section class="card"><h2>통장별</h2><div class="rows">' +
@@ -739,6 +758,62 @@ function renderList() {
   }
   $('#tab-list').innerHTML = html;
 }
+
+/* ---------- 카테고리별 지출 팝업 ---------- */
+var catOpen = null, catFocus = null;
+function catIsOpen() { return !!catOpen; }
+function renderCatSheet() {
+  var id = catOpen; if (!id) return;
+  var g = G.goalsFor(S.month), name = G.nameOf(S.cats, id, '삭제된 카테고리');
+  var items = (S.tx[S.month] || []).filter(function (t) { return t.cat === id; });
+  items.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : (b.ts || 0) - (a.ts || 0); });
+  var total = items.reduce(function (s, t) { return s + t.amt; }, 0);
+  var goal = g.cats[id] || 0, st = G.status(total, goal);
+  var w = goal > 0 ? Math.min(100, st.ratio * 100) : 0;
+  $('#catTitle').textContent = name + ' · ' + (+S.month.split('-')[1]) + '월';
+  var html = '<div class="sum-line"><span class="muted">지출 합계 · ' + items.length + '건</span><span class="big num">' + won(total) + '</span></div>' +
+    '<div class="bar" style="margin-top:12px"><i class="' + st.cls + '" style="width:' + w.toFixed(1) + '%"></i></div>' +
+    '<div class="catfoot"><span class="num">' + (goal > 0 ? st.pct + '%' : '목표 없음') + (st.cls === 'over' ? '<span class="badge">초과</span>' : '') + '</span><span class="num">' + (goal > 0 ? '목표 ' + G.numFmt(goal) + '원' : '') + '</span></div>';
+  if (!items.length) {
+    html += '<div class="empty">이 달에는 이 카테고리의 지출이 없어요.</div>';
+  } else {
+    var groups = [], idx = {};
+    items.forEach(function (t) {
+      if (!(t.date in idx)) { idx[t.date] = groups.length; groups.push({ date: t.date, list: [] }); }
+      groups[idx[t.date]].list.push(t);
+    });
+    groups.forEach(function (gr) {
+      var sum = gr.list.reduce(function (s, t) { return s + t.amt; }, 0);
+      html += '<div class="day"><span>' + G.dayLabel(gr.date) + '</span><span class="num">' + won(sum) + '</span></div><div class="list">';
+      gr.list.forEach(function (t) {
+        html += '<div class="item static"><span class="t">' + esc(G.nameOf(S.accts, t.acct, '삭제된 통장')) + '</span>' +
+          '<span class="a num">−' + G.numFmt(t.amt) + '원</span>' +
+          '<span class="s">' + (t.note ? esc(t.note) : '메모 없음') + (t.sample ? ' · 예시' : '') + '</span></div>';
+      });
+      html += '</div>';
+    });
+  }
+  $('#catBody').innerHTML = html;
+}
+function openCat(id) {
+  catFocus = document.activeElement;
+  catOpen = id;
+  renderCatSheet();
+  $('#catScrim').hidden = false;
+  $('#catBody').scrollTop = 0;
+  setTimeout(function () { $('#catClose').focus(); }, 30);
+}
+function closeCat() {
+  var id = catOpen;
+  catOpen = null;
+  $('#catScrim').hidden = true;
+  var back = id && document.querySelector('#tab-home [data-cat="' + id + '"]');
+  (back || catFocus || document.body).focus && (back || catFocus || document.body).focus();
+}
+window.GB.openCat = openCat;
+window.GB.closeCat = closeCat;
+window.GB.catIsOpen = catIsOpen;
+window.GB.renderCatSheet = renderCatSheet;
 
 window.GB.renderHome = renderHome;
 window.GB.renderList = renderList;
@@ -1022,6 +1097,7 @@ function render() {
   else if (S.tab === 'review') G.renderReview();
   else if (S.tab === 'my') renderMy();
   else G.renderGoal();
+  if (G.catIsOpen()) G.renderCatSheet();
 }
 
 /* ---------- 마이 ---------- */
@@ -1259,7 +1335,13 @@ function bind() {
   });
   $('#tab-home').addEventListener('click', function (e) {
     if (e.target.id === 'clearSamples') clearSamples();
+    var r = e.target.closest('[data-cat]'); if (r) G.openCat(r.dataset.cat);
   });
+  $('#tab-home').addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-cat]')) { e.preventDefault(); G.openCat(e.target.dataset.cat); }
+  });
+  $('#catClose').addEventListener('click', G.closeCat);
+  $('#catScrim').addEventListener('click', function (e) { if (e.target.id === 'catScrim') G.closeCat(); });
   $('#txForm').addEventListener('submit', submitTx);
   $('#fCancel').addEventListener('click', closeSheet);
   $('#fDel').addEventListener('click', deleteTx);
@@ -1267,7 +1349,10 @@ function bind() {
     var n = G.parseAmt(e.target.value); e.target.value = n ? G.numFmt(n) : '';
   });
   $('#scrim').addEventListener('click', function (e) { if (e.target.id === 'scrim') closeSheet(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('#scrim').hidden) closeSheet(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!$('#scrim').hidden) closeSheet(); else if (!$('#catScrim').hidden) G.closeCat();
+  });
   $('#aForm').addEventListener('submit', submitAuth);
   $('#aGoogle').addEventListener('click', googleLogin);
   $('#aToggle').addEventListener('click', function () { setAuthMode(authMode === 'login' ? 'signup' : 'login'); });
