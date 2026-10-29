@@ -1,4 +1,4 @@
-const CACHE = 'gagyebu-v4';
+const CACHE = 'gagyebu-v5';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './firebase-config.js', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com'];
 

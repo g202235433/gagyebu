@@ -235,8 +235,6 @@ textarea.in { resize: vertical; min-height: 110px; line-height: 1.55; }
 .loading { padding: 80px 0; text-align: center; color: var(--muted); }
 
 @media (max-width: 380px) {
-  .goal-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .goal-row .in.amt-in { grid-column: 1; }
   .two { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .bar > i { transition: none; } }
@@ -298,6 +296,12 @@ body.authing .tabbar, body.authing .fab { display: none; }
 .item.static { cursor: default; }
 .item.static:hover { background: transparent; }
 #catScrim .day:first-of-type { padding-top: 18px; }
+
+.goal-row .memo-in { grid-column: 1 / 3; grid-row: 2; font-size: 14px; padding: 8px 10px; background: transparent; border-style: dashed; }
+.goal-row + .goal-row { margin-top: 4px; }
+.plan { margin-top: 10px; padding: 9px 12px; border-radius: 10px; background: var(--surface-2); font-size: 14px; overflow-wrap: anywhere; }
+
+.goal-row .suffix .in, .add-row .suffix .in { padding-right: 30px; }
 </style>
 </head>
 <body>
@@ -606,7 +610,7 @@ function goalsFor(m) {
   var keys = Object.keys(S.goals).filter(function (k) { return k < m; }).sort();
   if (keys.length) {
     var s = S.goals[keys[keys.length - 1]];
-    return { total: s.total || 0, cats: Object.assign({}, s.cats), accts: Object.assign({}, s.accts), memo: '', inherited: true };
+    return { total: s.total || 0, cats: Object.assign({}, s.cats), catMemos: Object.assign({}, s.catMemos), accts: Object.assign({}, s.accts), memo: '', inherited: true };
   }
   return { total: 0, cats: {}, accts: {}, memo: '', inherited: false };
 }
@@ -773,6 +777,7 @@ function renderCatSheet() {
   $('#catTitle').textContent = name + ' · ' + (+S.month.split('-')[1]) + '월';
   var html = '<div class="sum-line"><span class="muted">지출 합계 · ' + items.length + '건</span><span class="big num">' + won(total) + '</span></div>' +
     '<div class="bar" style="margin-top:12px"><i class="' + st.cls + '" style="width:' + w.toFixed(1) + '%"></i></div>' +
+    (g.catMemos && g.catMemos[id] ? '<div class="plan"><span class="muted small">사용 계획</span> ' + esc(g.catMemos[id]) + '</div>' : '') +
     '<div class="catfoot"><span class="num">' + (goal > 0 ? st.pct + '%' : '목표 없음') + (st.cls === 'over' ? '<span class="badge">초과</span>' : '') + '</span><span class="num">' + (goal > 0 ? '목표 ' + G.numFmt(goal) + '원' : '') + '</span></div>';
   if (!items.length) {
     html += '<div class="empty">이 달에는 이 카테고리의 지출이 없어요.</div>';
@@ -826,14 +831,15 @@ var G = window.GB, S = G.S, $ = G.$, esc = G.esc;
 var TITLES = { review: '점검', home: '홈', list: '지출 내역', goal: '목표 설정', my: '마이' };
 
 /* ---------- 목표 설정 탭 ---------- */
-function goalRows(kind, list, map) {
+function goalRows(kind, list, map, memos) {
   if (!list.length) return '<div class="muted small">아직 없어요. 아래에서 추가해 보세요.</div>';
   return list.map(function (it) {
     var v = map[it.id] || 0;
     return '<div class="goal-row">' +
       '<input class="in" id="gn-' + it.id + '" data-kind="' + kind + '" data-id="' + it.id + '" data-f="name" value="' + esc(it.name) + '" maxlength="20" aria-label="이름">' +
       '<div class="suffix"><input class="in amt-in" id="ga-' + it.id + '" data-kind="' + kind + '" data-id="' + it.id + '" data-f="amt" inputmode="numeric" value="' + (v ? G.numFmt(v) : '') + '" placeholder="0" aria-label="목표 금액"></div>' +
-      '<button type="button" class="x" data-del="' + kind + '" data-id="' + it.id + '" aria-label="삭제">×</button></div>';
+      '<button type="button" class="x" data-del="' + kind + '" data-id="' + it.id + '" aria-label="삭제">×</button>' +
+      (kind === 'cat' ? '<input class="in memo-in" id="gm-' + it.id + '" data-kind="cat" data-id="' + it.id + '" data-f="memo" value="' + esc((memos && memos[it.id]) || '') + '" maxlength="80" placeholder="어디에 쓸 계획인가요? (예: 점심, 커피)" aria-label="' + esc(it.name) + ' 사용 계획 메모">' : '') + '</div>';
   }).join('');
 }
 
@@ -846,7 +852,7 @@ function renderGoal() {
   html += '<section class="card"><h2>이번 달 목표 소비액</h2><div class="total-goal">' +
     '<div class="suffix"><input class="in amt-in" id="gTotal" inputmode="numeric" placeholder="0" value="' + (g.total ? G.numFmt(g.total) : '') + '" aria-label="이번 달 목표 소비액" style="font-size:22px;padding-block:13px"></div>' +
     '<div class="hint">홈 화면 원형 통계의 기준이 돼요. 한 달 단위로 저장돼요.</div></div></section>';
-  html += '<section class="card"><h2>카테고리별 목표</h2><div class="goal-list" id="catList">' + goalRows('cat', S.cats, g.cats) + '</div>' +
+  html += '<section class="card"><h2>카테고리별 목표</h2><div class="goal-list" id="catList">' + goalRows('cat', S.cats, g.cats, g.catMemos) + '</div>' +
     '<div class="add-row"><input class="in" id="newCat" maxlength="20" placeholder="새 카테고리 (예: 의료비)" aria-label="새 카테고리 이름"><button type="button" class="btn" id="addCat">추가</button></div>' +
     '<div class="warnbox" id="catSum" style="margin-top:10px"></div></section>';
   html += '<section class="card"><h2>통장별 목표</h2><div class="goal-list" id="acctList">' + goalRows('acct', S.accts, g.accts) + '</div>' +
@@ -904,6 +910,7 @@ function deleteItem(btn) {
   if (i >= 0) list.splice(i, 1);
   Object.keys(S.goals).forEach(function (m) {
     var mp = kind === 'cat' ? S.goals[m].cats : S.goals[m].accts; if (mp) delete mp[id];
+    if (kind === 'cat' && S.goals[m].catMemos) delete S.goals[m].catMemos[id];
   });
   G.saveSettings();
   renderGoal();
@@ -917,6 +924,10 @@ function bindGoal() {
       var g = G.editGoals(S.month); g.total = fmtInput(t); G.saveSettings(); updateSums(); return;
     }
     if (t.id === 'gMemo') { G.editGoals(S.month).memo = t.value; G.saveSettings(); return; }
+    if (t.dataset && t.dataset.f === 'memo') {
+      var gm = G.editGoals(S.month); gm.catMemos = gm.catMemos || {}; gm.catMemos[t.dataset.id] = t.value;
+      G.saveSettings(); return;
+    }
     if (t.dataset && t.dataset.f === 'amt') {
       var n = fmtInput(t), gg = G.editGoals(S.month);
       (t.dataset.kind === 'cat' ? gg.cats : gg.accts)[t.dataset.id] = n;
